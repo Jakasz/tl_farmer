@@ -1,4 +1,3 @@
-from firebase import firebase
 import pyrebase
 from creds import Creds
 from getmac import get_mac_address
@@ -13,7 +12,7 @@ class Fb:
         mac = get_mac_address() 
         
         curr_data = db.child("/").child(creds.serial).child(str(mac).upper()).get()
-
+        print(curr_data.val()['canAccess'])
         try:
             can_access = curr_data.val()['canAccess']
         except:
@@ -23,12 +22,4 @@ class Fb:
             db.child("/").child(creds.serial).child(str(mac).upper()).set({"mac": f"{mac.upper()}", "date_regiter":f"{str(date.today())}", "canAccess":True})            
         
         return can_access
-
-
-        # cred_firestore = credentials.ApplicationDefault()
-        # firebase_admin.initialize_app(cred_firestore)
-        # db1 = firestore.client()
-    # def write_to_db(self):
-    #     refw = db.reference("/")
-    #     refw.update({"2":"ss"})
         

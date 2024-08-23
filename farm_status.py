@@ -2,9 +2,7 @@
 from dataclasses import dataclass
 
 @dataclass
-class Mob:
-    x1:int
-    x2: int
-    y1: int
-    y2: int
+class FStatus:
+    is_stuck:bool
+    status_count: int
     last_status: str
