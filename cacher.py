@@ -1,15 +1,17 @@
 import json
 from mob import Mob
 from radar import Radar
+from skils_area import Skills_Area
 
 class Cacher:  
     
-    def save_data_to_file(self, instance1 :Mob, instance2 :Radar, skills: str, filename="cached_data.txt"):
+    def save_data_to_file(self, instance1 :Mob, instance2 :Radar, skills: str, instance3 : Skills_Area, filename="cached_data.txt"):
     # Create a dictionary to store the instances
         data = {
             "Mob": instance1.__dict__,
             "Radar": instance2.__dict__,
-            "skills": skills
+            "skills": skills,
+            "Skills_area" : instance3.__dict__,
         }
 
     # Save the dictionary to a file in JSON format
@@ -27,5 +29,6 @@ class Cacher:
         instance1 = Mob(**data["Mob"])
         instance2 = Radar(**data["Radar"])
         skills = data["skills"]
+        skills_area = Skills_Area(**data["Skills_area"])
 
-        return instance1, instance2, skills
+        return instance1, instance2, skills, skills_area

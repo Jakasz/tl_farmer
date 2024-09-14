@@ -1,3 +1,4 @@
+import random
 from threading import Thread, Event
 import win32api
 import win32con
@@ -20,6 +21,7 @@ import re
 from farm_status import FStatus
 import atexit
 from cacher import Cacher
+from skils_area import Skills_Area
 
 
 root = ttk.Window(themename='darkly')
@@ -28,6 +30,7 @@ saved_area_val = ttk.StringVar()
 mob = Mob(x1=0, x2=0, y1=0, y2=0, last_status="")
 radar = Radar(x1=0, x2=0, y1=0, y2=0, isRunning=False)
 f_status = FStatus(is_stuck=False, last_status="", status_count=0)
+skills_area = Skills_Area(x1=0, x2=0, y1=0, y2=0, section_height=0, section_width=0)
 
 
 isRunning=False
@@ -44,6 +47,11 @@ def getMobArea():
     area = area_overlay.runGame()
     setMobArea(area[0], area[1], area[2], area[3])
 
+def getSkillsArea():
+    area = area_overlay.runGame()
+    setSkillArea(area[0], area[1], area[2], area[3])
+
+
 
 def setRadarArea(x1,y1,x2,y2):
     radar.x1 = x1
@@ -52,11 +60,22 @@ def setRadarArea(x1,y1,x2,y2):
     radar.y2 = y2
     radar.isRunning = False
 
+
 def setMobArea(x1,y1,x2,y2):
     mob.x1 = x1
     mob.y1 = y1
     mob.x2 = x2
     mob.y2 = y2
+
+
+def setSkillArea(x1,y1,x2,y2):
+    skills_area.x1 = x1
+    skills_area.y1 = y1
+    skills_area.x2 = x2
+    skills_area.y2 = y2
+    skills_area.section_height = y2 - y1
+    skills_area.section_width = (x2 - x1)/13
+
 
 def parseSkillOrder(): 
     skill_list = []   
@@ -64,9 +83,6 @@ def parseSkillOrder():
     for i in range(len(value)):
         skill_list.append(value[i])
     return skill_list    
-
-
-
 
 
 event= Event()
@@ -146,18 +162,37 @@ def get_mob_hp():
     im = ImageGrab.grab(bbox=(mob.x1, mob.y1, mob.x2, mob.y2))
     im.save("screenshot_mob.png")  
     img = cv2.imread(f"{current_directory}\screenshot_mob.png")
-    lower_bound = np.array([150, 130, 150], dtype=np.uint8)
-    upper_bound = np.array([255, 255, 255], dtype=np.uint8)
+    # gray_image = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    # gray_image = cv2.bitwise_not(img)
+    # resized_image = cv2.resize(gray_image, None, fx=2, fy=2, interpolation=cv2.INTER_LINEAR)
+    # _, thresh_image = cv2.threshold(resized_image, 150, 255, cv2.THRESH_BINARY)
+    # cv2.imwrite("gr222.png", thresh_image)
+    
+    
+    hsv_image = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    # resized_image = cv2.resize(hsv_image, None, fx=2, fy=2, interpolation=cv2.INTER_LINEAR)
+    # Define the color range for #a47f29
+    # First, convert the hex color to RGB, then to HSV
+    color_bgr = np.array([0x29, 0x7f, 0xa4], dtype=np.uint8)  # BGR format
+    color_rgb = cv2.cvtColor(color_bgr.reshape(1, 1, 3), cv2.COLOR_BGR2RGB).reshape(3)
+    color_hsv = cv2.cvtColor(color_rgb.reshape(1, 1, 3), cv2.COLOR_BGR2HSV).reshape(3)
 
-    # Create a mask that identifies the white areas
-    white_mask = cv2.inRange(img, lower_bound, upper_bound)
+    # Define the range for the color in HSV
+    lower_bound = np.array([color_hsv[0] - 10, 50, 50])  # You may need to adjust these values
+    upper_bound = np.array([color_hsv[0] + 10, 255, 255])
 
-    # Invert the mask to cover non-white areas
-    non_white_mask = cv2.bitwise_not(white_mask)
+    # Create a mask for the specified color
+    mask = cv2.inRange(hsv_image, lower_bound, upper_bound)
 
-    # Turn all non-white areas to black
-    result_image = cv2.bitwise_and(img, img, mask=white_mask)
-    imageText = pytesseract.image_to_string(image=result_image, lang='eng', config="--psm 6").replace("\n", "").replace(" ","") 
+    # Invert the mask to keep everything except the color
+    mask_inv = cv2.bitwise_not(mask)
+
+    # Use the mask to remove the color
+    result = cv2.bitwise_and(img, img, mask=mask_inv)
+    
+    
+    # cv2.imwrite("gr222.png", result)
+    imageText = pytesseract.image_to_string(image=result, lang='eng', config="--psm 7").replace("\n", "").replace(" ","") 
     return replace_except_symbols_and_numbers(imageText)
 
 
@@ -191,32 +226,143 @@ def search_mob_in_radar():
             y= radar.y1+(sectiongHeight/2) +sectiongHeight*(j)
 
             return int(x),int(y)
-    return(0,0)    
+    return(0,0) 
+
+def is_int_plus_s(value):
+    # Check if the value is a string
+    if not isinstance(value, str):
+        return False
+    
+    # Check if the string ends with 's'
+    if not value.endswith('s'):
+        return False
+    
+    # Try to convert the part before the 's' to an integer
+    try:
+        int_part = value[:-1]  # Strip the last character 's'
+        int(int_part)  # Try converting the rest to an integer
+        return True
+    except ValueError:
+        return False
+  
+
+def check_cooldown():
+    img = cv2.imread(f"{current_directory}\screenshot_cooldown.png")
+    # gray_image = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    # gray_image = cv2.bitwise_not(gray_image)
+    # resized_image = cv2.resize(gray_image, None, fx=2, fy=2, interpolation=cv2.INTER_LINEAR)
+    # _, thresh_image = cv2.threshold(resized_image, 150, 255, cv2.THRESH_BINARY)
+    # cv2.imwrite("gr.png", thresh_image)
+    # custom_config = r'--oem 3 --psm 6'
+
+    # imageText = pytesseract.image_to_string(image=thresh_image, lang='eng', config=custom_config).replace("\n", "").replace(" ","") 
+    # # print(f"image text = {imageText}")
+    
+    # Convert to grayscale
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    # Apply thresholding
+    _, thresh = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY_INV)
+
+    # Optionally resize image
+    resized = cv2.resize(thresh, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+    # cv2.imwrite("gr.png", resized)
+    # Use pytesseract to extract text
+    custom_config = r'--oem 3 --psm 6'
+    imageText = pytesseract.image_to_string(resized, config=custom_config)
+    return imageText
+
+
+def check_skill_on_cooldown(i):
+    if i == '-' or i == '=':
+        if(i=='='):
+            x1 = skills_area.x2 - skills_area.section_width
+            y1 = skills_area.y2 - skills_area.section_height
+            im = ImageGrab.grab(bbox=(x1, y1, skills_area.x2, skills_area.y2))   
+            im.save("screenshot_cooldown.png")
+            is_ready =bool(re.search(r'\d', check_cooldown()))    
+            return is_ready
+        else:
+ 
+            x1 = skills_area.x2 - (skills_area.section_width*2)
+            y1 = skills_area.y2 - skills_area.section_height
+            im = ImageGrab.grab(bbox=(x1, y1, skills_area.x2-skills_area.section_width, skills_area.y2))   
+            im.save("screenshot_cooldown.png")
+            is_ready =bool(re.search(r'\d', check_cooldown()))  
+         
+            return is_ready
+    i = int(i)
+    if(i==0):
+
+        x1 = skills_area.x2 - (skills_area.section_width*3)
+        y1 = skills_area.y2 - skills_area.section_height
+        im = ImageGrab.grab(bbox=(x1, y1, skills_area.x2-(skills_area.section_width*2), skills_area.y2))   
+        im.save("screenshot_cooldown.png")
+        is_ready =bool(re.search(r'\d', check_cooldown()))  
+      
+        return is_ready
+    if (i<7 and i>0):
+
+        x1 = skills_area.x1+(skills_area.section_width*(i-1))  
+        x2 = skills_area.x1+(skills_area.section_width*i)       
+        im = ImageGrab.grab(bbox=(x1, skills_area.y1, x2, skills_area.y2))   
+        im.save("screenshot_cooldown.png")
+        is_ready =bool(re.search(r'\d', check_cooldown()))      
+
+        return is_ready
+    else:
+        #зміщуємо на 1 так як є кнопка ~ між панелями
+        x1 = skills_area.x1+(skills_area.section_width*i)  
+        x2 = skills_area.x2+(skills_area.section_width*i)       
+        im = ImageGrab.grab(bbox=(x1, skills_area.y1, x2, skills_area.y2))   
+        im.save("screenshot_cooldown.png")
+        is_ready =bool(re.search(r'\d', check_cooldown()))     
+
+        return is_ready   
+
+def random_float_with_step(start, stop, step):
+    # Calculate the number of possible steps
+    steps = int((stop - start) / step) + 1
+    
+    # Generate a random integer representing a step
+    random_step = random.randint(0, steps - 1)
+    
+    # Return the float by multiplying the step with the generated integer
+    return start + random_step * step 
         
 def check_mob_hp():
-    result_text =  get_mob_hp()
+    result_text =  get_mob_hp()    
     return result_text
-    pass
 
 def skill_cycle(skills: list):  
     for i in skills:
         if(check_mob_hp()!=""):
-            pyautogui.press(i)  
-            time.sleep(1)
+            #false is not on cooldown
+            if(check_skill_on_cooldown(i)==False):                
+                time.sleep(random_float_with_step(0, 2, 0.5))
+                pyautogui.press(i)
         else:
             return        
+def on_press(key):
+    try:
+        if key.char=='q':
+            stopFarm()                        
+    except AttributeError:
+        print('special key {0} pressed'.format(key))
+
 
 def save_config():
     caher = Cacher()
-    caher.save_data_to_file(instance1=mob, instance2=radar, skills=t_skill_order.get())
+    caher.save_data_to_file(instance1=mob, instance2=radar, skills=t_skill_order.get(), instance3=skills_area)
     pass
 
 def restore_config():
     caher = Cacher()
-    instance1, instance2, skills = caher.load_data_from_file()
+    instance1, instance2, skills, instance3 = caher.load_data_from_file()
     t_skill_order.set(skills)
     mob.__dict__=instance1.__dict__.copy()
-    radar.__dict__=instance2.__dict__.copy()    
+    radar.__dict__=instance2.__dict__.copy()
+    skills_area.__dict__=instance3.__dict__.copy()    
 
 
 def processFarm():
@@ -235,11 +381,12 @@ def processFarm():
         x,y = search_mob_in_radar()
         if(x==0 & y==0):
             continue
-        click(x, y)        
+        click(x, y)
+        time.sleep(1)        
         skill_cycle(skills)
 
 root.title('TL Farmer')
-root.geometry('760x300')
+root.geometry('760x350')
 root.columnconfigure(0, weight=1)
 root.columnconfigure(1, weight=1)
 
@@ -257,32 +404,48 @@ ttk.Style().map('Main.TButton',
 
 
 select_area_frame = ttk.Frame(root)
-selectMobAreaLabel = ttk.Label(master=select_area_frame, text='Select radar area',font="Arial 12", width=15)
-selectMobAreaLabel.grid(row=0, column=0, sticky='w')
-selectMobButton = ttk.Button(master=select_area_frame, text="Select",
+selectSkillsAreaLabel = ttk.Label(master=select_area_frame, text='Select radar area',font="Arial 12", width=15)
+selectSkillsAreaLabel.grid(row=0, column=0, sticky='w')
+selectSkillsButton = ttk.Button(master=select_area_frame, text="Select",
     command=getRadarArea,
     style='Main.TButton',
     width=19
     ) 
-selectMobButton.grid(row=0, column=1, sticky="e", padx=10)
+selectSkillsButton.grid(row=0, column=1, sticky="e", padx=10)
 select_area_frame.grid(row=0, column=0, sticky='nswe', pady=15,padx=10)   
 
 
 
-select_mob_area_frame = ttk.Frame(root)
-selectMobAreaLabel = ttk.Label(master=select_mob_area_frame, text='Select mob area ',font="Arial 12" , width=15)
-selectMobAreaLabel.grid(row=0, column=0, sticky='w')
-selectMobButton = ttk.Button(master=select_mob_area_frame, text="Select",
+select_skills_area_frame = ttk.Frame(root)
+selectSkillsAreaLabel = ttk.Label(master=select_skills_area_frame, text='Select skills area ',font="Arial 12" , width=15)
+selectSkillsAreaLabel.grid(row=0, column=0, sticky='w')
+selectSkillsButton = ttk.Button(master=select_skills_area_frame, text="Select",
+    command=getSkillsArea,
+    style='Main.TButton',
+    width=19,       
+    ) 
+selectSkillsButton.grid(row=0, column=1, sticky="e", padx=10)
+select_skills_area_frame.grid(row=2, column=0, sticky='nswe', pady=15, padx=10)  
+
+
+
+select_skills_area_frame = ttk.Frame(root)
+selectSkillsAreaLabel = ttk.Label(master=select_skills_area_frame, text='Select mob area ',font="Arial 12" , width=15)
+selectSkillsAreaLabel.grid(row=0, column=0, sticky='w')
+selectSkillsButton = ttk.Button(master=select_skills_area_frame, text="Select",
     command=getMobArea,
     style='Main.TButton',
     width=19,       
     ) 
-selectMobButton.grid(row=0, column=1, sticky="e", padx=10)
-select_mob_area_frame.grid(row=1, column=0, sticky='nswe', pady=15, padx=10)  
+selectSkillsButton.grid(row=0, column=1, sticky="e", padx=10)
+select_skills_area_frame.grid(row=1, column=0, sticky='nswe', pady=15, padx=10)  
+
+
+
 
 skill_oder_label = ttk.Label(master=root, text='Enter skill order separated ''","' ,font="Arial 12")
 skill_order = ttk.Entry(master=root, textvariable=t_skill_order, width=55)
-skill_order.grid(row=3, column=0, sticky='w', padx=10)
+skill_order.grid(row=4, column=0, sticky='w', padx=10)
 
 ttk.Style().configure('Save.TButton', padding=6, relief="flat",background="#2979FF",font="Arial 12", foreground='#ffffff')
 ttk.Style().map('Save.TButton',background=[('hover', '#039BE5')])
@@ -302,7 +465,7 @@ rest_conf = ttk.Button(master=config_frame, text="Restore config",
     style='Restore.TButton',
     )
 rest_conf.grid(row=0, column=1, sticky='w', padx=10)
-config_frame.grid(row=4, column=0, sticky='nswe', pady=15)
+config_frame.grid(row=5, column=0, sticky='nswe', pady=15)
 
 ttk.Style().configure("Stop.TButton", padding=6, relief="flat",
    background="#BE3144",font="Arial 12", foreground='#ffffff')
@@ -326,7 +489,7 @@ start_farm = ttk.Button(master=root, width=30, text='Start farm', style='Start.T
 start_farm.grid(row=1, column=1, sticky='nswe', padx=10, pady=10)
 start_farm = ttk.Button(master=root, width=30, text='Stop farm', style='Stop.TButton', command=stopFarm)
 start_farm.grid(row=2, column=1, sticky='nswe', padx=10, pady=10,)
-skill_oder_label.grid(row=2, column=0, pady=10, sticky='w', padx=10)
+skill_oder_label.grid(row=3, column=0, pady=10, sticky='w', padx=10)
 
 
 
@@ -374,7 +537,12 @@ def legal_check():
     return isCanAccess==False
 
 
+listener = keyboard.Listener(
+    on_press=on_press)
+listener.start()
+
 if(legal_check()):
     exit()
 else:    
     root.mainloop()
+    
